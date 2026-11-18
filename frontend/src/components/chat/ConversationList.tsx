@@ -48,7 +48,7 @@ export function ConversationList({
   }
 
   return (
-    <div className="space-y-0.5 px-2 py-1 overflow-y-auto">
+    <div className="space-y-1 py-1">
       {filtered.map((conv) => {
         const isActive = conv.id === activeId;
         return (
@@ -56,36 +56,46 @@ export function ConversationList({
             key={conv.id}
             href={`/chat/${conv.id}`}
             title={conv.title}
-            className={`group flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-medium transition-colors ${
+            className={`group flex items-center rounded-xl text-xs font-medium transition-colors ${
+              isCollapsed
+                ? 'justify-center w-10 h-10 mx-auto p-0'
+                : 'justify-between px-2.5 py-2'
+            } ${
               isActive
                 ? 'bg-blue-50 text-blue-700'
                 : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
             }`}
           >
-            <div className="flex items-center space-x-2 truncate pr-2">
+            {isCollapsed ? (
               <MessageSquare
-                className={`w-3.5 h-3.5 flex-shrink-0 ${
+                className={`w-4 h-4 flex-shrink-0 ${
                   isActive ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'
                 }`}
               />
-              {!isCollapsed && (
-                <span className="truncate">{conv.title}</span>
-              )}
-            </div>
+            ) : (
+              <>
+                <div className="flex items-center space-x-2 truncate pr-2">
+                  <MessageSquare
+                    className={`w-3.5 h-3.5 flex-shrink-0 ${
+                      isActive ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'
+                    }`}
+                  />
+                  <span className="truncate">{conv.title}</span>
+                </div>
 
-            {!isCollapsed && (
-              <div className="flex items-center space-x-1.5 flex-shrink-0">
-                <span className="text-[10px] text-gray-400 group-hover:hidden">
-                  {formatRelativeTime(conv.updated_at)}
-                </span>
-                <button
-                  onClick={(e) => handleDelete(e, conv.id)}
-                  className="hidden group-hover:flex text-gray-400 hover:text-red-600 p-0.5 rounded transition-colors"
-                  title="Delete chat"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </div>
+                <div className="flex items-center space-x-1.5 flex-shrink-0">
+                  <span className="text-[10px] text-gray-400 group-hover:hidden">
+                    {formatRelativeTime(conv.updated_at)}
+                  </span>
+                  <button
+                    onClick={(e) => handleDelete(e, conv.id)}
+                    className="hidden group-hover:flex text-gray-400 hover:text-red-600 p-0.5 rounded transition-colors"
+                    title="Delete chat"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </>
             )}
           </Link>
         );

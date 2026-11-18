@@ -99,43 +99,54 @@ export function Sidebar() {
         } ${mobileOpen ? 'translate-x-0 !w-[260px]' : '-translate-x-full md:translate-x-0'}`}
       >
         {/* Brand Header */}
-        <div className="h-14 flex items-center justify-between px-3.5 border-b border-[#E5E7EB]">
-          <Link
-            href="/dashboard"
-            className="flex items-center space-x-2.5 truncate"
-            onClick={() => setMobileOpen(false)}
-          >
-            <div className="w-8 h-8 rounded-xl bg-[#2563EB] text-white flex items-center justify-center flex-shrink-0 shadow-xs">
-              <Sparkles className="w-4 h-4 fill-white text-white" />
-            </div>
-            {(sidebarOpen || mobileOpen) && (
-              <span className="font-semibold text-sm text-[#202123] tracking-tight">
-                DocuMind <span className="text-[#2563EB]">AI</span>
-              </span>
-            )}
-          </Link>
+        <div
+          className={`h-14 flex items-center border-b border-[#E5E7EB] transition-all flex-shrink-0 ${
+            sidebarOpen || mobileOpen ? 'justify-between px-3.5' : 'justify-center px-0'
+          }`}
+        >
+          {sidebarOpen || mobileOpen ? (
+            <>
+              <Link
+                href="/dashboard"
+                className="flex items-center space-x-2.5 truncate"
+                onClick={() => setMobileOpen(false)}
+              >
+                <div className="w-8 h-8 rounded-xl bg-[#2563EB] text-white flex items-center justify-center flex-shrink-0 shadow-xs">
+                  <Sparkles className="w-4 h-4 fill-white text-white" />
+                </div>
+                <span className="font-semibold text-sm text-[#202123] tracking-tight">
+                  DocuMind <span className="text-[#2563EB]">AI</span>
+                </span>
+              </Link>
 
-          <button
-            onClick={toggleSidebar}
-            className="hidden md:flex p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-200/50 transition-colors"
-            title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
-          >
-            {sidebarOpen ? (
-              <ChevronLeft className="w-4 h-4" />
-            ) : (
-              <ChevronRight className="w-4 h-4" />
-            )}
-          </button>
+              <button
+                onClick={toggleSidebar}
+                className="hidden md:flex p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-200/50 transition-colors cursor-pointer"
+                title="Collapse sidebar"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={toggleSidebar}
+              className="w-10 h-10 rounded-xl bg-[#2563EB] text-white flex items-center justify-center shadow-xs hover:bg-blue-700 transition-all group cursor-pointer"
+              title="Expand sidebar"
+            >
+              <Sparkles className="w-4 h-4 text-white group-hover:hidden transition-transform" />
+              <ChevronRight className="w-5 h-5 text-white hidden group-hover:block transition-transform" />
+            </button>
+          )}
         </div>
 
         {/* New Chat Button */}
-        <div className="p-3">
+        <div className="p-3 flex justify-center flex-shrink-0">
           <button
             onClick={handleNewChat}
-            className={`w-full flex items-center justify-center rounded-xl font-medium text-xs transition-all shadow-xs cursor-pointer ${
+            className={`flex items-center justify-center rounded-xl font-medium text-xs transition-all shadow-xs cursor-pointer ${
               sidebarOpen || mobileOpen
-                ? 'bg-white border border-[#E5E7EB] text-[#202123] hover:border-blue-300 hover:text-blue-600 px-3 py-2.5 space-x-2'
-                : 'bg-white border border-[#E5E7EB] text-[#202123] hover:text-blue-600 p-2.5'
+                ? 'w-full bg-white border border-[#E5E7EB] text-[#202123] hover:border-blue-300 hover:text-blue-600 px-3 py-2.5 space-x-2'
+                : 'w-10 h-10 bg-white border border-[#E5E7EB] text-[#202123] hover:border-blue-400 hover:text-blue-600 p-0'
             }`}
             title="Start new chat"
           >
@@ -146,7 +157,7 @@ export function Sidebar() {
 
         {/* Search Conversations (When expanded) */}
         {(sidebarOpen || mobileOpen) && (
-          <div className="px-3 pb-2">
+          <div className="px-3 pb-2 flex-shrink-0">
             <div className="relative">
               <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
@@ -161,7 +172,7 @@ export function Sidebar() {
         )}
 
         {/* Conversations History */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
           {(sidebarOpen || mobileOpen) && (
             <div className="px-3.5 py-1 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
               Recent Chats
@@ -177,7 +188,7 @@ export function Sidebar() {
         </div>
 
         {/* Navigation Section */}
-        <div className="p-2 border-t border-[#E5E7EB] space-y-0.5">
+        <div className="p-2 border-t border-[#E5E7EB] space-y-1 flex-shrink-0">
           {navLinks.map((link) => {
             const Icon = link.icon;
             const active = pathname === link.href;
@@ -187,11 +198,15 @@ export function Sidebar() {
                 href={link.href}
                 onClick={() => setMobileOpen(false)}
                 title={link.label}
-                className={`flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-colors ${
+                className={`flex items-center rounded-xl text-xs font-medium transition-colors ${
+                  !sidebarOpen && !mobileOpen
+                    ? 'justify-center w-10 h-10 mx-auto p-0'
+                    : 'space-x-2.5 px-3 py-2'
+                } ${
                   active
                     ? 'bg-blue-50 text-blue-700 font-semibold'
                     : 'text-[#6B7280] hover:bg-gray-100 hover:text-[#202123]'
-                } ${!sidebarOpen && !mobileOpen ? 'justify-center px-2' : ''}`}
+                }`}
               >
                 <Icon
                   className={`w-4 h-4 flex-shrink-0 ${
@@ -205,13 +220,14 @@ export function Sidebar() {
         </div>
 
         {/* Local AI Status Indicator Footer */}
-        <div className="p-3 border-t border-[#E5E7EB] bg-white/50 text-xs">
+        <div className="p-3 border-t border-[#E5E7EB] bg-white/50 text-xs flex justify-center flex-shrink-0">
           <div
-            className={`flex items-center space-x-2 ${
-              !sidebarOpen && !mobileOpen ? 'justify-center' : ''
+            className={`flex items-center ${
+              !sidebarOpen && !mobileOpen ? 'justify-center w-10 h-5' : 'space-x-2 w-full'
             }`}
+            title={ollamaOnline ? 'Ollama Online' : 'Ollama Offline'}
           >
-            <span className="relative flex h-2.5 w-2.5">
+            <span className="relative flex h-2.5 w-2.5 flex-shrink-0">
               {ollamaOnline && (
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
               )}
