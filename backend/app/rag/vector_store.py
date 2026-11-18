@@ -194,6 +194,9 @@ def search(
     document_ids: Optional[List[str]] = None,
 ) -> List[dict]:
     """Search for nearest chunks. Optionally filter by document_ids."""
+    if document_ids is not None and len(document_ids) == 0:
+        return []
+
     coll = _get_collection()
     if coll is not None:
         try:

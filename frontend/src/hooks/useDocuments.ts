@@ -3,8 +3,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Document } from '@/types/document';
 import { getDocuments, uploadDocument, deleteDocument } from '@/services/document.service';
+import { useAppStore } from '@/store/app-store';
 
 export function useDocuments() {
+  const user = useAppStore((s) => s.user);
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -27,7 +29,7 @@ export function useDocuments() {
 
   useEffect(() => {
     fetchDocuments();
-  }, [fetchDocuments]);
+  }, [fetchDocuments, user]);
 
   const upload = async (file: File): Promise<Document> => {
     setUploading(true);

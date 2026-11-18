@@ -46,16 +46,24 @@ export async function streamChat(
   request: ChatStreamRequest,
   onSources: (sources: Source[]) => void,
   onToken: (token: string) => void,
-  onDone: () => void,
+  onDone: (payload?: { conversation_id?: string; title?: string }) => void,
   onError: (error: string) => void,
   signal?: AbortSignal
 ): Promise<void> {
   try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (typeof window !== 'undefined') {
+      const token = localStorage.getItem('documind_token');
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+    }
+
     const response = await fetch(`${BASE_URL}/api/chat/stream`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify(request),
       signal,
     });
@@ -103,7 +111,10 @@ export async function streamChat(
           } else if (payload.type === 'token') {
             onToken(payload.token || '');
           } else if (payload.type === 'done') {
-            onDone();
+            onDone({
+              conversation_id: payload.conversation_id,
+              title: payload.title,
+            });
           } else if (payload.type === 'error') {
             onError(payload.message || 'An error occurred during generation');
           }

@@ -37,7 +37,7 @@ def _compute_hash(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-async def ingest_document(file: UploadFile, db: Session) -> Document:
+async def ingest_document(file: UploadFile, db: Session, user_id: Optional[str] = None) -> Document:
     """
     Full ingestion pipeline:
     1. Validate, 2. Hash, 3. Dedup, 4. Save, 5. DB record,
@@ -52,8 +52,11 @@ async def ingest_document(file: UploadFile, db: Session) -> Document:
 
     file_hash = _compute_hash(file_bytes)
 
-    # Duplicate / re-upload handling
-    existing = db.query(Document).filter(Document.file_hash == file_hash).first()
+    # Duplicate / re-upload handling for this user
+    existing_query = db.query(Document).filter(Document.file_hash == file_hash)
+    if user_id:
+        existing_query = existing_query.filter(Document.user_id == user_id)
+    existing = existing_query.first()
     if existing:
         # Re-index existing document cleanly without throwing 409 Conflict
         try:
@@ -89,6 +92,7 @@ async def ingest_document(file: UploadFile, db: Session) -> Document:
         now = datetime.utcnow()
         document = Document(
             id=doc_id,
+            user_id=user_id,
             filename=safe_name,
             original_filename=original_filename,
             stored_path=stored_path,
@@ -145,19 +149,24 @@ async def ingest_document(file: UploadFile, db: Session) -> Document:
     return document
 
 
-def get_all_documents(db: Session) -> list[Document]:
-    return db.query(Document).order_by(Document.created_at.desc()).all()
+def get_all_documents(db: Session, user_id: Optional[str] = None) -> list[Document]:
+    if not user_id:
+        return []
+    return db.query(Document).filter(Document.user_id == user_id).order_by(Document.created_at.desc()).all()
 
 
-def get_document(document_id: str, db: Session) -> Document:
-    doc = db.query(Document).filter(Document.id == document_id).first()
+def get_document(document_id: str, db: Session, user_id: Optional[str] = None) -> Document:
+    query = db.query(Document).filter(Document.id == document_id)
+    if user_id:
+        query = query.filter(Document.user_id == user_id)
+    doc = query.first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     return doc
 
 
-def delete_document(document_id: str, db: Session) -> None:
-    doc = get_document(document_id, db)
+def delete_document(document_id: str, db: Session, user_id: Optional[str] = None) -> None:
+    doc = get_document(document_id, db, user_id=user_id)
 
     # Delete from ChromaDB
     try:

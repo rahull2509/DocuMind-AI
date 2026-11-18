@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { AppShell } from '@/components/layout/AppShell';
+import { useAppStore } from '@/store/app-store';
 import { getSettings, getModels, getHealth } from '@/services/chat.service';
 import { SettingsResponse, HealthResponse } from '@/types/api';
 import {
@@ -16,22 +17,24 @@ import {
 } from 'lucide-react';
 
 export default function SettingsPage() {
-  const [settings, setSettings] = useState<SettingsResponse | null>(null);
+  const { systemSettings, setSystemSettings } = useAppStore();
+  const [settings, setSettings] = useState<SettingsResponse | null>(systemSettings);
   const [models, setModels] = useState<string[]>([]);
   const [health, setHealth] = useState<HealthResponse | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(!systemSettings);
   const [saved, setSaved] = useState<boolean>(false);
 
   useEffect(() => {
     async function load() {
       try {
-        setLoading(true);
+        if (!systemSettings) setLoading(true);
         const [s, m, h] = await Promise.all([
           getSettings(),
           getModels().catch(() => ['qwen2.5:3b']),
           getHealth().catch(() => null),
         ]);
         setSettings(s);
+        setSystemSettings(s);
         setModels(m.length > 0 ? m : ['qwen2.5:3b']);
         setHealth(h);
       } catch (err) {
@@ -41,7 +44,7 @@ export default function SettingsPage() {
       }
     }
     load();
-  }, []);
+  }, [systemSettings, setSystemSettings]);
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();

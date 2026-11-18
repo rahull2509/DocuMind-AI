@@ -18,6 +18,7 @@ async def answer_stream(
     document_ids: Optional[List[str]],
     db: Session,
     settings: Settings,
+    user_id: Optional[str] = None,
 ) -> AsyncGenerator[str, None]:
     """
     RAG streaming pipeline. Yields SSE-formatted data strings.
@@ -26,13 +27,23 @@ async def answer_stream(
         # Ensure conversation exists
         if conversation_id:
             conversation = db.query(Conversation).filter(Conversation.id == conversation_id).first()
-            if not conversation:
+            if conversation:
+                # Link to user if not linked yet
+                if not conversation.user_id and user_id:
+                    conversation.user_id = user_id
+                # Auto-generate conversation title from first question if still default
+                if conversation.title in ("New Conversation", "New Chat", "") and question.strip():
+                    conversation.title = question.strip()[:60]
+                db.commit()
+            else:
                 conversation_id = None
 
         if not conversation_id:
+            clean_title = question.strip()[:60] if question.strip() else "New Conversation"
             conversation = Conversation(
                 id=str(uuid.uuid4()),
-                title=question[:60] if len(question) > 60 else question,
+                user_id=user_id,
+                title=clean_title,
                 created_at=datetime.utcnow(),
                 updated_at=datetime.utcnow(),
             )
@@ -45,11 +56,24 @@ async def answer_stream(
         embedder = get_embedder()
         query_embedding = embedder.embed([question])[0]
 
-        # 2. Search ChromaDB
+        # 2. Scope search to user's documents
+        effective_doc_ids = None
+        if user_id:
+            from app.models.document import Document
+            user_doc_rows = db.query(Document.id).filter(Document.user_id == user_id).all()
+            user_doc_ids = [r[0] for r in user_doc_rows]
+            if document_ids:
+                effective_doc_ids = [d for d in document_ids if d in user_doc_ids]
+            else:
+                effective_doc_ids = user_doc_ids
+        elif document_ids:
+            effective_doc_ids = document_ids
+
+        # 3. Search ChromaDB
         results = vector_store.search(
             query_embedding=query_embedding,
             top_k=settings.TOP_K,
-            document_ids=document_ids if document_ids else None,
+            document_ids=effective_doc_ids,
         )
 
         # 3. Build context & prompt
@@ -110,7 +134,8 @@ async def answer_stream(
         db.commit()
 
         # 11. Done event
-        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+        current_title = conversation.title if conversation else None
+        yield f"data: {json.dumps({'type': 'done', 'conversation_id': conversation_id, 'title': current_title})}\n\n"
 
     except Exception as exc:
         yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"

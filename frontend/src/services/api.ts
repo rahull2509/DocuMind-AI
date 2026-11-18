@@ -23,6 +23,14 @@ export async function apiFetch<T>(
     headers.set('Content-Type', 'application/json');
   }
 
+  // Inject JWT authorization header if stored
+  if (typeof window !== 'undefined' && !headers.has('Authorization')) {
+    const token = localStorage.getItem('documind_token');
+    if (token) {
+      headers.set('Authorization', `Bearer ${token}`);
+    }
+  }
+
   const response = await fetch(url, {
     ...options,
     headers,

@@ -1,1 +1,3 @@
-# models/__init__.py
+from app.models.user import User  # noqa: F401
+from app.models.document import Document  # noqa: F401
+from app.models.conversation import Conversation, Message  # noqa: F401

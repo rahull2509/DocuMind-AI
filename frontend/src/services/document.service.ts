@@ -14,6 +14,13 @@ export async function uploadDocument(
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `${BASE_URL}/api/documents/upload`);
 
+    if (typeof window !== 'undefined') {
+      const token = localStorage.getItem('documind_token');
+      if (token) {
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      }
+    }
+
     if (xhr.upload && onProgress) {
       xhr.upload.onprogress = (event) => {
         if (event.lengthComputable) {

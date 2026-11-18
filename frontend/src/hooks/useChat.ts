@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { Message, Source } from '@/types/chat';
 import { getConversation, streamChat } from '@/services/chat.service';
+import { useAppStore } from '@/store/app-store';
 
 export function useChat(initialConversationId?: string | null) {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -12,6 +13,7 @@ export function useChat(initialConversationId?: string | null) {
     initialConversationId || null
   );
 
+  const { setActiveConversationTitle } = useAppStore();
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const loadConversation = useCallback(async (id: string) => {
@@ -19,6 +21,9 @@ export function useChat(initialConversationId?: string | null) {
       setError(null);
       setConversationId(id);
       const data = await getConversation(id);
+      if (data && data.title) {
+        setActiveConversationTitle(data.title);
+      }
       const formatted: Message[] = (data.messages || []).map((m: any) => ({
         id: m.id,
         conversation_id: m.conversation_id,
@@ -31,7 +36,7 @@ export function useChat(initialConversationId?: string | null) {
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to load conversation');
     }
-  }, []);
+  }, [setActiveConversationTitle]);
 
   const stopStreaming = useCallback(() => {
     if (abortControllerRef.current) {
@@ -83,6 +88,17 @@ export function useChat(initialConversationId?: string | null) {
       let accumulatedTokens = '';
       let receivedSources: Source[] = [];
 
+      // Update store title immediately if conversation title is New Conversation or unset
+      const cleanTitle = question.trim().slice(0, 50);
+      const curTitle = useAppStore.getState().activeConversationTitle;
+      const targetId = effectiveConvId;
+      if (!curTitle || curTitle === 'New Conversation' || curTitle === 'New Chat') {
+        setActiveConversationTitle(cleanTitle);
+        if (targetId) {
+          useAppStore.getState().updateConversationTitleInStore(targetId, cleanTitle);
+        }
+      }
+
       await streamChat(
         {
           conversation_id: effectiveConvId,
@@ -107,7 +123,7 @@ export function useChat(initialConversationId?: string | null) {
             )
           );
         },
-        () => {
+        (donePayload) => {
           setIsStreaming(false);
           setMessages((prev) =>
             prev.map((m) =>
@@ -121,6 +137,30 @@ export function useChat(initialConversationId?: string | null) {
                 : m
             )
           );
+          const finalTitle = donePayload?.title || cleanTitle;
+          const convId = donePayload?.conversation_id || effectiveConvId;
+          if (convId && finalTitle) {
+            const exists = useAppStore
+              .getState()
+              .conversations.some((c) => c.id === convId);
+            if (!exists) {
+              useAppStore.getState().addConversation({
+                id: convId,
+                title: finalTitle,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              });
+            } else {
+              useAppStore
+                .getState()
+                .updateConversationTitleInStore(convId, finalTitle);
+            }
+            setActiveConversationTitle(finalTitle);
+          }
+          if (donePayload?.conversation_id && !conversationId) {
+            setConversationId(donePayload.conversation_id);
+            window.history.replaceState(null, '', `/chat/${donePayload.conversation_id}`);
+          }
           abortControllerRef.current = null;
         },
         (errMsg) => {

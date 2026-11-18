@@ -8,9 +8,20 @@ import {
   updateConversation,
   deleteConversation,
 } from '@/services/chat.service';
+import { useAppStore } from '@/store/app-store';
 
 export function useConversations() {
-  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const user = useAppStore((s) => s.user);
+  const conversations = useAppStore((s) => s.conversations);
+  const setConversations = useAppStore((s) => s.setConversations);
+  const addConversation = useAppStore((s) => s.addConversation);
+  const updateConversationTitleInStore = useAppStore(
+    (s) => s.updateConversationTitleInStore
+  );
+  const removeConversationFromStore = useAppStore(
+    (s) => s.removeConversationFromStore
+  );
+
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -21,24 +32,29 @@ export function useConversations() {
       const data = await getConversations();
       setConversations(Array.isArray(data) ? data : []);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch conversations');
+      setError(
+        err instanceof Error ? err.message : 'Failed to fetch conversations'
+      );
       setConversations([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [setConversations]);
 
   useEffect(() => {
     fetchConversations();
-  }, [fetchConversations]);
+  }, [fetchConversations, user]);
 
-  const create = async (title: string = 'New Conversation'): Promise<Conversation> => {
+  const create = async (
+    title: string = 'New Conversation'
+  ): Promise<Conversation> => {
     try {
       const conv = await createConversation(title);
-      setConversations((prev) => [conv, ...prev]);
+      addConversation(conv);
       return conv;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to create conversation';
+      const msg =
+        err instanceof Error ? err.message : 'Failed to create conversation';
       setError(msg);
       throw err;
     }
@@ -47,12 +63,11 @@ export function useConversations() {
   const rename = async (id: string, title: string): Promise<Conversation> => {
     try {
       const updated = await updateConversation(id, title);
-      setConversations((prev) =>
-        prev.map((c) => (c.id === id ? { ...c, title: updated.title } : c))
-      );
+      updateConversationTitleInStore(id, updated.title);
       return updated;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to rename conversation';
+      const msg =
+        err instanceof Error ? err.message : 'Failed to rename conversation';
       setError(msg);
       throw err;
     }
@@ -61,9 +76,10 @@ export function useConversations() {
   const remove = async (id: string): Promise<void> => {
     try {
       await deleteConversation(id);
-      setConversations((prev) => prev.filter((c) => c.id !== id));
+      removeConversationFromStore(id);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to delete conversation';
+      const msg =
+        err instanceof Error ? err.message : 'Failed to delete conversation';
       setError(msg);
       throw err;
     }

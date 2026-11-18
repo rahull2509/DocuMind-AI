@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     TEMPERATURE: float = 0.1
     MAX_TOKENS: int = 2048
     CORS_ORIGINS: List[str] = ["http://localhost:3000"]
+    JWT_SECRET: str = "documind-super-secret-jwt-key-2026-very-secure-32bytes"
+    JWT_ALGORITHM: str = "HS256"
+    JWT_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

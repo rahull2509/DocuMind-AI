@@ -1,13 +1,13 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AppShell } from '@/components/layout/AppShell';
 import { useDocuments } from '@/hooks/useDocuments';
 import { useConversations } from '@/hooks/useConversations';
+import { useAppStore } from '@/store/app-store';
 import { getHealth, getSettings } from '@/services/chat.service';
-import { HealthResponse, SettingsResponse } from '@/types/api';
 import { DocumentStatusBadge } from '@/components/documents/DocumentStatus';
 import { formatFileSize, formatRelativeTime, formatDate } from '@/lib/utils';
 import {
@@ -27,24 +27,26 @@ export default function DashboardPage() {
   const router = useRouter();
   const { documents, loading: docsLoading } = useDocuments();
   const { conversations, loading: convsLoading, create: createConv } = useConversations();
-  const [health, setHealth] = useState<HealthResponse | null>(null);
-  const [settings, setSettings] = useState<SettingsResponse | null>(null);
-  const [loadingHealth, setLoadingHealth] = useState<boolean>(true);
+  const {
+    ollamaOnline,
+    ollamaChecked,
+    systemSettings,
+    setSystemSettings,
+    setOllamaOnline,
+  } = useAppStore();
 
   useEffect(() => {
-    async function loadData() {
-      try {
-        const [h, s] = await Promise.all([getHealth(), getSettings()]);
-        setHealth(h);
-        setSettings(s);
-      } catch (err) {
-        console.error('Error fetching dashboard health/settings:', err);
-      } finally {
-        setLoadingHealth(false);
-      }
+    if (!systemSettings) {
+      getSettings()
+        .then((s) => setSystemSettings(s))
+        .catch(() => {});
     }
-    loadData();
-  }, []);
+    if (!ollamaChecked) {
+      getHealth()
+        .then((h) => setOllamaOnline(h.ollama_online))
+        .catch(() => setOllamaOnline(false));
+    }
+  }, [systemSettings, setSystemSettings, ollamaChecked, setOllamaOnline]);
 
   const docsList = Array.isArray(documents) ? documents : [];
   const convsList = Array.isArray(conversations) ? conversations : [];
@@ -156,16 +158,24 @@ export default function DashboardPage() {
             </div>
             <div className="flex items-center space-x-2">
               <div className="text-sm font-bold text-gray-900 truncate">
-                {settings?.ollama_model || 'qwen2.5:3b'}
+                {systemSettings?.ollama_model || 'qwen2.5:3b'}
               </div>
               <span
                 className={`inline-block w-2.5 h-2.5 rounded-full ${
-                  health?.ollama_online ? 'bg-emerald-500' : 'bg-rose-500'
+                  ollamaChecked
+                    ? ollamaOnline
+                      ? 'bg-emerald-500'
+                      : 'bg-rose-500'
+                    : 'bg-gray-300'
                 }`}
               />
             </div>
             <div className="text-[11px] text-gray-400 mt-1 font-mono">
-              {loadingHealth ? 'Checking...' : health?.ollama_online ? 'Ollama running' : 'Ollama disconnected'}
+              {!ollamaChecked
+                ? 'Checking...'
+                : ollamaOnline
+                ? 'Ollama running'
+                : 'Ollama disconnected'}
             </div>
           </div>
         </div>
