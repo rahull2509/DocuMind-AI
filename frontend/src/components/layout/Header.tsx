@@ -1,10 +1,9 @@
 'use client';
 
 import React from 'react';
-import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAppStore } from '@/store/app-store';
-import { Sparkles, FileText, ArrowRight } from 'lucide-react';
+import { FileText } from 'lucide-react';
 
 export function Header() {
   const pathname = usePathname();
@@ -38,13 +37,6 @@ export function Header() {
             ⚠️ Start Ollama (<code>ollama serve</code>)
           </div>
         )}
-        <Link
-          href="/documents"
-          className="text-xs text-gray-500 hover:text-blue-600 transition-colors hidden sm:flex items-center space-x-1"
-        >
-          <span>PDF Library</span>
-          <ArrowRight className="w-3 h-3" />
-        </Link>
       </div>
     </header>
   );
