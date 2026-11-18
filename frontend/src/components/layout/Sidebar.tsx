@@ -101,20 +101,17 @@ export function Sidebar() {
         {/* Brand Header */}
         <div
           className={`h-14 flex items-center border-b border-[#E5E7EB] transition-all flex-shrink-0 ${
-            sidebarOpen || mobileOpen ? 'justify-between px-3.5' : 'justify-center px-0'
+            sidebarOpen || mobileOpen ? 'justify-between px-4' : 'justify-center px-0'
           }`}
         >
           {sidebarOpen || mobileOpen ? (
             <>
               <Link
                 href="/dashboard"
-                className="flex items-center space-x-2.5 truncate"
+                className="flex items-center truncate"
                 onClick={() => setMobileOpen(false)}
               >
-                <div className="w-8 h-8 rounded-xl bg-[#2563EB] text-white flex items-center justify-center flex-shrink-0 shadow-xs">
-                  <Sparkles className="w-4 h-4 fill-white text-white" />
-                </div>
-                <span className="font-semibold text-sm text-[#202123] tracking-tight">
+                <span className="font-bold text-base text-[#202123] tracking-tight">
                   DocuMind <span className="text-[#2563EB]">AI</span>
                 </span>
               </Link>
@@ -130,11 +127,10 @@ export function Sidebar() {
           ) : (
             <button
               onClick={toggleSidebar}
-              className="w-10 h-10 rounded-xl bg-[#2563EB] text-white flex items-center justify-center shadow-xs hover:bg-blue-700 transition-all group cursor-pointer"
+              className="w-8 h-8 rounded-xl bg-[#2563EB] text-white flex items-center justify-center flex-shrink-0 shadow-xs hover:bg-blue-700 transition-all cursor-pointer"
               title="Expand sidebar"
             >
-              <Sparkles className="w-4 h-4 text-white group-hover:hidden transition-transform" />
-              <ChevronRight className="w-5 h-5 text-white hidden group-hover:block transition-transform" />
+              <Sparkles className="w-4 h-4 fill-white text-white" />
             </button>
           )}
         </div>
