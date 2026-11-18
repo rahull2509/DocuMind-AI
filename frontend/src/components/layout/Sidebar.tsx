@@ -171,21 +171,23 @@ export function Sidebar() {
           </div>
         )}
 
-        {/* Conversations History */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
-          {(sidebarOpen || mobileOpen) && (
+        {/* Conversations History (Only shown when expanded) */}
+        {sidebarOpen || mobileOpen ? (
+          <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
             <div className="px-3.5 py-1 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
               Recent Chats
             </div>
-          )}
-          <ConversationList
-            conversations={conversations}
-            activeId={activeConversationId}
-            onDelete={remove}
-            filterQuery={searchQuery}
-            isCollapsed={!sidebarOpen && !mobileOpen}
-          />
-        </div>
+            <ConversationList
+              conversations={conversations}
+              activeId={activeConversationId}
+              onDelete={remove}
+              filterQuery={searchQuery}
+            />
+          </div>
+        ) : (
+          /* Clean empty space when collapsed (no chat history) */
+          <div className="flex-1" />
+        )}
 
         {/* Navigation Section */}
         <div className="p-2 border-t border-[#E5E7EB] space-y-1 flex-shrink-0">
