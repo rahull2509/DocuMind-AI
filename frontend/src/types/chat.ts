@@ -2,6 +2,7 @@ export interface Source {
   text: string;
   filename: string;
   page_number: number;
+  section_title?: string;
   chunk_index: number;
   distance: number;
 }

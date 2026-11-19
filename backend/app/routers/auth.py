@@ -1,5 +1,4 @@
 import uuid
-from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -12,6 +11,7 @@ from app.services.auth_service import (
     create_access_token,
     get_current_user,
 )
+from app.utils.datetime_utils import utc_now
 
 router = APIRouter()
 
@@ -31,7 +31,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
         name=payload.name.strip(),
         email=payload.email.lower().strip(),
         password_hash=hash_password(payload.password),
-        created_at=datetime.utcnow(),
+        created_at=utc_now(),
     )
     db.add(user)
     db.commit()

@@ -23,11 +23,21 @@ export async function apiFetch<T>(
     headers.set('Content-Type', 'application/json');
   }
 
-  // Inject JWT authorization header if stored
-  if (typeof window !== 'undefined' && !headers.has('Authorization')) {
-    const token = localStorage.getItem('documind_token');
-    if (token) {
-      headers.set('Authorization', `Bearer ${token}`);
+  // Inject JWT authorization header and guest session ID if in browser
+  if (typeof window !== 'undefined') {
+    if (!headers.has('Authorization')) {
+      const token = localStorage.getItem('documind_token');
+      if (token) {
+        headers.set('Authorization', `Bearer ${token}`);
+      }
+    }
+    if (!headers.has('X-Session-ID')) {
+      let sessionId = localStorage.getItem('documind_session_id');
+      if (!sessionId) {
+        sessionId = 'sess_' + (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2));
+        localStorage.setItem('documind_session_id', sessionId);
+      }
+      headers.set('X-Session-ID', sessionId);
     }
   }
 

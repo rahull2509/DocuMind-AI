@@ -1,8 +1,9 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import String, Integer, Text, DateTime, ForeignKey, Index
+from sqlalchemy import String, Integer, Text, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
+from app.utils.datetime_utils import utc_now
 
 
 class Document(Base):
@@ -12,6 +13,7 @@ class Document(Base):
     user_id: Mapped[str | None] = mapped_column(
         String, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True
     )
+    session_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     filename: Mapped[str] = mapped_column(String, nullable=False)
     original_filename: Mapped[str] = mapped_column(String, nullable=False)
     stored_path: Mapped[str] = mapped_column(String, nullable=False)
@@ -21,7 +23,7 @@ class Document(Base):
     chunk_count: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String, default="uploading")
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
 
     user: Mapped["User | None"] = relationship("User", back_populates="documents")

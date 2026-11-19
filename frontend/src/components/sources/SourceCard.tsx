@@ -1,16 +1,16 @@
 import React, { useState } from 'react';
 import { Source } from '@/types/chat';
-import { FileText, ChevronDown, ChevronUp } from 'lucide-react';
+import { FileText, ChevronDown, ChevronUp, Bookmark } from 'lucide-react';
 
 interface SourceCardProps {
   source: Source;
   index: number;
 }
 
-export function SourceCard({ source, index }: SourceCardProps) {
+export function SourceCard({ source }: SourceCardProps) {
   const [expanded, setExpanded] = useState<boolean>(false);
 
-  // ChromaDB cosine distance: distance ranges [0, 2], lower is more similar.
+  // ChromaDB / SQLite cosine distance: distance ranges [0, 2], lower is more similar.
   // Similarity % = max(0, min(100, Math.round((1 - source.distance) * 100)))
   const relevance = Math.max(0, Math.min(100, Math.round((1 - (source.distance || 0)) * 100)));
 
@@ -28,6 +28,15 @@ export function SourceCard({ source, index }: SourceCardProps) {
           <span className="bg-white border border-gray-200 text-gray-600 px-1.5 py-0.5 rounded text-[10px] font-mono whitespace-nowrap">
             p. {source.page_number}
           </span>
+          {source.section_title && source.section_title !== 'General' && (
+            <span
+              className="bg-blue-50 border border-blue-200 text-blue-700 px-1.5 py-0.5 rounded text-[10px] font-sans truncate max-w-[130px] hidden sm:inline-flex items-center space-x-0.5"
+              title={source.section_title}
+            >
+              <Bookmark className="w-2.5 h-2.5 mr-0.5 flex-shrink-0" />
+              <span className="truncate">{source.section_title}</span>
+            </span>
+          )}
         </div>
         <div className="flex items-center space-x-2 flex-shrink-0">
           <span className="text-[10px] text-gray-500 font-medium">

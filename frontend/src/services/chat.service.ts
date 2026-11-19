@@ -50,21 +50,34 @@ export async function streamChat(
   onError: (error: string) => void,
   signal?: AbortSignal
 ): Promise<void> {
+  let doneDispatched = false;
+
   try {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
     };
     if (typeof window !== 'undefined') {
       const token = localStorage.getItem('documind_token');
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
       }
+      let sessionId = localStorage.getItem('documind_session_id');
+      if (!sessionId) {
+        sessionId = 'sess_' + (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2));
+        localStorage.setItem('documind_session_id', sessionId);
+      }
+      headers['X-Session-ID'] = sessionId;
     }
 
     const response = await fetch(`${BASE_URL}/api/chat/stream`, {
       method: 'POST',
       headers,
-      body: JSON.stringify(request),
+      body: JSON.stringify({
+        question: request.question,
+        conversation_id: request.conversation_id,
+        document_ids: request.document_ids && request.document_ids.length > 0 ? request.document_ids : null,
+      }),
       signal,
     });
 
@@ -111,6 +124,7 @@ export async function streamChat(
           } else if (payload.type === 'token') {
             onToken(payload.token || '');
           } else if (payload.type === 'done') {
+            doneDispatched = true;
             onDone({
               conversation_id: payload.conversation_id,
               title: payload.title,
@@ -124,10 +138,15 @@ export async function streamChat(
       }
     }
 
-    onDone();
+    // Only dispatch onDone if not already dispatched by the 'done' SSE event
+    if (!doneDispatched) {
+      onDone();
+    }
   } catch (err: unknown) {
     if (err instanceof Error && err.name === 'AbortError') {
-      onDone();
+      if (!doneDispatched) {
+        onDone();
+      }
       return;
     }
     onError(err instanceof Error ? err.message : 'Unknown streaming error');

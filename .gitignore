@@ -42,6 +42,14 @@ nosetests.xml
 coverage.xml
 *.cover
 *.py,cover
+tests/
+backend/tests/
+benchmarks/
+backend/benchmarks/
+*.eval.json
+rag_eval_results.json
+final_validation_report.json
+final_validation_report*.json
 
 # Node / Frontend
 node_modules/
@@ -69,7 +77,11 @@ frontend/.env*.local
 *.sqlite3
 documind.db
 backend/documind.db
+storage/
+storage/*
+backend/storage/
 backend/storage/*
+backend/chroma_db/
 backend/chroma_db/*
 !backend/storage/.gitkeep
 !backend/chroma_db/.gitkeep
