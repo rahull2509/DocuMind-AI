@@ -3,6 +3,16 @@ import { Document } from '@/types/document';
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
+export function getOrCreateSessionId(): string {
+  if (typeof window === 'undefined') return '';
+  let sessionId = localStorage.getItem('documind_session_id');
+  if (!sessionId) {
+    sessionId = 'sess_' + (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2));
+    localStorage.setItem('documind_session_id', sessionId);
+  }
+  return sessionId;
+}
+
 export async function uploadDocument(
   file: File,
   onProgress?: (percent: number) => void
@@ -19,6 +29,11 @@ export async function uploadDocument(
       if (token) {
         xhr.setRequestHeader('Authorization', `Bearer ${token}`);
       }
+      // Ensure X-Session-ID is ALWAYS sent for reliable guest session ownership and data isolation
+      const sessionId = getOrCreateSessionId();
+      if (sessionId) {
+        xhr.setRequestHeader('X-Session-ID', sessionId);
+      }
     }
 
     if (xhr.upload && onProgress) {
@@ -33,10 +48,15 @@ export async function uploadDocument(
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
-          const data = JSON.parse(xhr.responseText);
+          const data: Document = JSON.parse(xhr.responseText);
+          // If backend returns status "failed", do not treat as successful upload
+          if (data.status === 'failed') {
+            reject(new Error(data.error_message || 'Document processing and indexing failed.'));
+            return;
+          }
           resolve(data);
-        } catch (e) {
-          reject(new Error('Failed to parse upload response'));
+        } catch {
+          reject(new Error('Failed to parse upload response from server.'));
         }
       } else {
         let msg = `Upload failed with status ${xhr.status}`;
@@ -50,8 +70,8 @@ export async function uploadDocument(
       }
     };
 
-    xhr.onerror = () => reject(new Error('Network error during file upload'));
-    xhr.ontimeout = () => reject(new Error('Upload timed out'));
+    xhr.onerror = () => reject(new Error('Network error during file upload. Please check your connection.'));
+    xhr.ontimeout = () => reject(new Error('Upload timed out.'));
 
     xhr.send(formData);
   });

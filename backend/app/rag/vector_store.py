@@ -212,8 +212,8 @@ def _deduplicate_candidates(
 class SQLiteVectorStore:
     """
     Persistent, pure-Python vector store using SQLite and NumPy.
-    Provides an exact drop-in fallback when native binary DLLs
-    (such as chromadb_rust_bindings) are restricted by Windows Application Control policies.
+    Provides an exact drop-in fallback and dual-write storage guarantee
+    with complete document IDs, chunk IDs, metadata, and embeddings.
     Supports Hybrid Retrieval combining dense cosine similarity and Okapi BM25 via Reciprocal Rank Fusion.
     """
 
@@ -245,26 +245,30 @@ class SQLiteVectorStore:
             )
 
     def add_chunks(self, chunks: List[dict], embeddings: List[List[float]]) -> None:
+        """Insert or replace chunks and embeddings transactionally."""
+        if not chunks:
+            return
         with sqlite3.connect(self.db_path) as conn:
-            for c, emb in zip(chunks, embeddings):
-                arr = np.array(emb, dtype=np.float32)
-                conn.execute(
-                    """
-                    INSERT OR REPLACE INTO vector_chunks 
-                    (chunk_id, document_id, filename, page_number, chunk_index, text, embedding, section_title)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        c["chunk_id"],
-                        c["document_id"],
-                        c["filename"],
-                        c["page_number"],
-                        c["chunk_index"],
-                        c["text"],
-                        arr.tobytes(),
-                        c.get("section_title", "General"),
-                    ),
-                )
+            with conn:
+                for c, emb in zip(chunks, embeddings):
+                    arr = np.array(emb, dtype=np.float32)
+                    conn.execute(
+                        """
+                        INSERT OR REPLACE INTO vector_chunks 
+                        (chunk_id, document_id, filename, page_number, chunk_index, text, embedding, section_title)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            c["chunk_id"],
+                            c["document_id"],
+                            c["filename"],
+                            c["page_number"],
+                            c["chunk_index"],
+                            c["text"],
+                            arr.tobytes(),
+                            c.get("section_title", "General"),
+                        ),
+                    )
 
     def search(
         self,
@@ -343,7 +347,8 @@ class SQLiteVectorStore:
 
     def delete_by_document_id(self, document_id: str) -> None:
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute("DELETE FROM vector_chunks WHERE document_id = ?", (document_id,))
+            with conn:
+                conn.execute("DELETE FROM vector_chunks WHERE document_id = ?", (document_id,))
 
     def get_collection_count(self) -> int:
         with sqlite3.connect(self.db_path) as conn:
@@ -399,10 +404,18 @@ def _get_collection():
 
 
 def add_chunks(chunks: List[dict], embeddings: List[List[float]]) -> None:
-    """Add chunks and embeddings to vector store."""
+    """
+    Add chunks and embeddings to vector storage.
+    Enforces dual-write persistence: SQLite fallback store is ALWAYS guaranteed to contain
+    the complete data, ensuring zero data loss and exact equivalence during ChromaDB fallbacks.
+    """
     if not chunks:
         return
 
+    # 1. Always write to SQLite fallback store first (reliable local ACID guarantee)
+    _get_fallback_store().add_chunks(chunks, embeddings)
+
+    # 2. Synchronize to ChromaDB if available
     coll = _get_collection()
     if coll is not None:
         try:
@@ -419,11 +432,9 @@ def add_chunks(chunks: List[dict], embeddings: List[List[float]]) -> None:
                 for c in chunks
             ]
             coll.upsert(ids=ids, embeddings=embeddings, documents=documents, metadatas=metadatas)
-            return
-        except Exception:
-            pass
-
-    _get_fallback_store().add_chunks(chunks, embeddings)
+        except Exception as e:
+            # Non-fatal because SQLite fallback holds the verified data
+            print(f"ChromaDB upsert sync warning: {e}")
 
 
 def search(
@@ -435,6 +446,7 @@ def search(
     """
     Search for nearest chunks with Hybrid Retrieval (Dense Vector + BM25 Lexical Ranking).
     Optionally filters by document_ids.
+    Falls back gracefully to SQLite store if ChromaDB is unavailable or returns incomplete results.
     """
     if document_ids is not None and len(document_ids) == 0:
         return []
@@ -479,32 +491,31 @@ def search(
                         "cosine_sim": 1.0 - dist,
                     })
 
-                # Hybrid RRF reranking with BM25
-                candidates.sort(key=lambda x: x["cosine_sim"], reverse=True)
-                dense_ranks = {c["chunk_id"]: rank + 1 for rank, c in enumerate(candidates)}
-                bm25_ranks = _compute_bm25_ranks(candidates, query_text) if query_text else {}
+                # If results found, rerank and return
+                if candidates:
+                    candidates.sort(key=lambda x: x["cosine_sim"], reverse=True)
+                    dense_ranks = {c["chunk_id"]: rank + 1 for rank, c in enumerate(candidates)}
+                    bm25_ranks = _compute_bm25_ranks(candidates, query_text) if query_text else {}
 
-                w_bm25 = 2.0
-                w_dense = 1.0
-                for c in candidates:
-                    cid = c["chunk_id"]
-                    r_dense = dense_ranks.get(cid, 1000)
-                    r_bm25 = bm25_ranks.get(cid, 1000)
-                    c["rrf_score"] = (w_dense / (60.0 + r_dense)) + (w_bm25 / (60.0 + r_bm25))
+                    w_bm25 = 2.0
+                    w_dense = 1.0
+                    for c in candidates:
+                        cid = c["chunk_id"]
+                        r_dense = dense_ranks.get(cid, 1000)
+                        r_bm25 = bm25_ranks.get(cid, 1000)
+                        c["rrf_score"] = (w_dense / (60.0 + r_dense)) + (w_bm25 / (60.0 + r_bm25))
 
-                # Sort by RRF score descending, breaking ties with earlier page number
-                candidates.sort(key=lambda x: (-x["rrf_score"], x.get("page_number", 1)))
+                    candidates.sort(key=lambda x: (-x["rrf_score"], x.get("page_number", 1)))
+                    return _deduplicate_candidates(candidates, query_text=query_text, top_k=top_k)
+        except Exception as e:
+            print(f"ChromaDB search failed, routing to SQLite fallback: {e}")
 
-                # Semantic and content deduplication over candidates
-                return _deduplicate_candidates(candidates, query_text=query_text, top_k=top_k)
-        except Exception:
-            pass
-
+    # Fallback to persistent SQLite vector store
     return _get_fallback_store().search(query_embedding, top_k, document_ids, query_text=query_text)
 
 
 def delete_by_document_id(document_id: str) -> None:
-    """Delete all vectors associated with the given document_id."""
+    """Delete all vectors associated with the given document_id across both stores."""
     coll = _get_collection()
     if coll is not None:
         try:
@@ -516,11 +527,13 @@ def delete_by_document_id(document_id: str) -> None:
 
 
 def get_collection_count() -> int:
-    """Return total number of vectors in the collection."""
+    """Return total number of vectors across the persistent stores."""
     coll = _get_collection()
     if coll is not None:
         try:
-            return coll.count()
+            c = coll.count()
+            if c > 0:
+                return c
         except Exception:
             pass
 

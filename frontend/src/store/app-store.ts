@@ -123,6 +123,7 @@ export const useAppStore = create<AppState>((set) => ({
       user: null,
       token: null,
       conversations: [],
+      selectedDocumentIds: [],
       activeConversationId: null,
       activeConversationTitle: null,
     });

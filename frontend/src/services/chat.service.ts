@@ -51,6 +51,8 @@ export async function streamChat(
   signal?: AbortSignal
 ): Promise<void> {
   let doneDispatched = false;
+  let hasError = false;
+  let isAborted = false;
 
   try {
     const headers: Record<string, string> = {
@@ -82,6 +84,7 @@ export async function streamChat(
     });
 
     if (!response.ok) {
+      hasError = true;
       let detail = response.statusText;
       try {
         const errJson = await response.json();
@@ -94,6 +97,7 @@ export async function streamChat(
     }
 
     if (!response.body) {
+      hasError = true;
       onError('Response body is null');
       return;
     }
@@ -130,25 +134,36 @@ export async function streamChat(
               title: payload.title,
             });
           } else if (payload.type === 'error') {
+            hasError = true;
             onError(payload.message || 'An error occurred during generation');
+            break;
           }
         } catch {
           // If non-JSON SSE chunk, skip
         }
       }
+
+      if (hasError) {
+        try {
+          await reader.cancel();
+        } catch {
+          // ignore
+        }
+        break;
+      }
     }
 
-    // Only dispatch onDone if not already dispatched by the 'done' SSE event
-    if (!doneDispatched) {
+    // Only dispatch onDone if generation was successful and neither done nor error was already dispatched
+    if (!doneDispatched && !hasError && !isAborted) {
+      doneDispatched = true;
       onDone();
     }
   } catch (err: unknown) {
     if (err instanceof Error && err.name === 'AbortError') {
-      if (!doneDispatched) {
-        onDone();
-      }
+      isAborted = true;
       return;
     }
+    hasError = true;
     onError(err instanceof Error ? err.message : 'Unknown streaming error');
   }
 }

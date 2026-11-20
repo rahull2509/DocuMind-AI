@@ -1,10 +1,18 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 from app.config import settings
 
+is_sqlite = settings.DB_URL.startswith("sqlite")
+
+engine_kwargs = {}
+if is_sqlite:
+    engine_kwargs["connect_args"] = {"check_same_thread": False}
+else:
+    engine_kwargs["pool_pre_ping"] = True
+
 engine = create_engine(
     settings.DB_URL,
-    connect_args={"check_same_thread": False},
+    **engine_kwargs,
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -27,21 +35,27 @@ def init_db():
     from app.models import user, document, conversation  # noqa: F401
     Base.metadata.create_all(bind=engine)
 
-    # Automatic schema migration for user_id and session_id columns
+    # Dialect-agnostic automatic schema migration for user_id and session_id columns
     try:
-        with engine.connect() as conn:
-            conv_cols = [row[1] for row in conn.exec_driver_sql("PRAGMA table_info(conversations)").fetchall()]
-            if "user_id" not in conv_cols:
-                conn.exec_driver_sql("ALTER TABLE conversations ADD COLUMN user_id VARCHAR")
-            if "session_id" not in conv_cols:
-                conn.exec_driver_sql("ALTER TABLE conversations ADD COLUMN session_id VARCHAR")
+        inspector = inspect(engine)
+        table_names = inspector.get_table_names()
 
-            doc_cols = [row[1] for row in conn.exec_driver_sql("PRAGMA table_info(documents)").fetchall()]
-            if "user_id" not in doc_cols:
-                conn.exec_driver_sql("ALTER TABLE documents ADD COLUMN user_id VARCHAR")
-            if "session_id" not in doc_cols:
-                conn.exec_driver_sql("ALTER TABLE documents ADD COLUMN session_id VARCHAR")
+        if "conversations" in table_names:
+            conv_cols = [c["name"] for c in inspector.get_columns("conversations")]
+            with engine.connect() as conn:
+                if "user_id" not in conv_cols:
+                    conn.exec_driver_sql("ALTER TABLE conversations ADD COLUMN user_id VARCHAR")
+                if "session_id" not in conv_cols:
+                    conn.exec_driver_sql("ALTER TABLE conversations ADD COLUMN session_id VARCHAR")
+                conn.commit()
 
-            conn.commit()
+        if "documents" in table_names:
+            doc_cols = [c["name"] for c in inspector.get_columns("documents")]
+            with engine.connect() as conn:
+                if "user_id" not in doc_cols:
+                    conn.exec_driver_sql("ALTER TABLE documents ADD COLUMN user_id VARCHAR")
+                if "session_id" not in doc_cols:
+                    conn.exec_driver_sql("ALTER TABLE documents ADD COLUMN session_id VARCHAR")
+                conn.commit()
     except Exception as e:
         print(f"Migration note: {e}")

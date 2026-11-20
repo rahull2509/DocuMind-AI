@@ -44,10 +44,17 @@ async def ingest_document(
     session_id: Optional[str] = None,
 ) -> Document:
     """
-    Full ingestion pipeline:
-    1. Validate, 2. Hash, 3. Dedup per user or guest session, 4. Save, 5. DB record,
-    6. Extract, 7. Chunk, 8. Embed, 9. Store, 10. Update DB.
+    Full ingestion pipeline with strict tenant and guest session isolation:
+    1. Validate, 2. Enforce Ownership, 3. Hash, 4. Scoped Dedup, 5. Save disk,
+    6. DB record, 7. Extract, 8. Chunk, 9. Embed, 10. Store vectors, 11. Finalize.
     """
+    # Enforce mandatory ownership: every uploaded document MUST belong to an authenticated user or guest session
+    if not user_id and not session_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Ownership identifier required. Provide Authorization token or X-Session-ID header.",
+        )
+
     file_bytes = await file.read()
     file_size = len(file_bytes)
     original_filename = file.filename or "unknown.pdf"
@@ -61,10 +68,8 @@ async def ingest_document(
     existing_query = db.query(Document).filter(Document.file_hash == file_hash)
     if user_id:
         existing_query = existing_query.filter(Document.user_id == user_id)
-    elif session_id:
-        existing_query = existing_query.filter(Document.user_id.is_(None), Document.session_id == session_id)
     else:
-        existing_query = existing_query.filter(Document.user_id.is_(None), Document.session_id.is_(None))
+        existing_query = existing_query.filter(Document.user_id.is_(None), Document.session_id == session_id)
 
     existing = existing_query.first()
     if existing:
@@ -119,10 +124,10 @@ async def ingest_document(
         document.updated_at = utc_now()
         db.commit()
 
-        # Extract (with max page validation)
+        # Extract (with max page validation and scanned PDF rejection)
         pages = extract_pdf_pages(file_bytes, max_pages=settings.MAX_PAGE_COUNT)
 
-        # Token-aware Chunking
+        # Token-aware Chunking without destructive truncation
         chunks = chunk_document(
             pages=pages,
             document_id=doc_id,
@@ -146,6 +151,7 @@ async def ingest_document(
         document.updated_at = utc_now()
         db.commit()
         db.refresh(document)
+        return document
 
     except Exception as exc:
         document.status = "failed"
@@ -153,8 +159,11 @@ async def ingest_document(
         document.updated_at = utc_now()
         db.commit()
         db.refresh(document)
-
-    return document
+        # Raise HTTPException so API and caller immediately receive the failure
+        raise HTTPException(
+            status_code=422,
+            detail=f"Document indexing failed: {exc}",
+        )
 
 
 def get_all_documents(
@@ -162,6 +171,7 @@ def get_all_documents(
     user_id: Optional[str] = None,
     session_id: Optional[str] = None,
 ) -> List[Document]:
+    """Retrieve all documents strictly scoped to the requesting user or guest session."""
     if user_id:
         return db.query(Document).filter(Document.user_id == user_id).order_by(Document.created_at.desc()).all()
     elif session_id:
@@ -178,13 +188,10 @@ def get_document(
     user_id: Optional[str] = None,
     session_id: Optional[str] = None,
 ) -> Document:
+    """Retrieve a document with strict access control and ownership validation."""
     doc = db.query(Document).filter(Document.id == document_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
-
-    # Public documents are viewable by anyone
-    if doc.user_id is None and doc.session_id is None:
-        return doc
 
     # Authenticated user document
     if doc.user_id:
@@ -207,21 +214,22 @@ def delete_document(
     user_id: Optional[str] = None,
     session_id: Optional[str] = None,
 ) -> None:
+    """Delete a document and its stored vectors with strict ownership validation."""
     doc = db.query(Document).filter(Document.id == document_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    # Prevent deleting public system documents without authorization
-    if doc.user_id is None and doc.session_id is None:
-        raise HTTPException(status_code=403, detail="Cannot delete default public documents")
-
     # Verify ownership
-    if doc.user_id and (not user_id or doc.user_id != user_id):
-        raise HTTPException(status_code=404, detail="Document not found")
-    if doc.session_id and (not session_id or doc.session_id != session_id):
+    if doc.user_id:
+        if not user_id or doc.user_id != user_id:
+            raise HTTPException(status_code=404, detail="Document not found")
+    elif doc.session_id:
+        if not session_id or doc.session_id != session_id:
+            raise HTTPException(status_code=404, detail="Document not found")
+    else:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    # Delete from ChromaDB
+    # Delete from ChromaDB and SQLite fallback store
     try:
         vector_store.delete_by_document_id(document_id)
     except Exception:

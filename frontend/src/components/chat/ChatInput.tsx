@@ -90,9 +90,14 @@ export function ChatInput({
 
     try {
       const doc = await upload(file);
+      if (doc.status === 'failed') {
+        throw new Error(doc.error_message || 'Indexing failed: Document could not be processed.');
+      }
       setJustUploadedDocs((prev) => [...prev.filter((d) => d.id !== doc.id), doc]);
-      // Automatically lock as the active grounded source
-      setSelectedDocumentIds([doc.id]);
+      // Only automatically lock as grounded source if successfully indexed
+      if (doc.status === 'completed') {
+        setSelectedDocumentIds([doc.id]);
+      }
       refresh();
     } catch (err: unknown) {
       setUploadError(err instanceof Error ? err.message : 'Upload failed');

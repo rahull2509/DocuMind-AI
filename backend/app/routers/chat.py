@@ -34,7 +34,7 @@ async def chat_stream(
                     detail="You do not have permission to access this conversation",
                 )
         elif conv.session_id:
-            if x_session_id != conv.session_id:
+            if not x_session_id or x_session_id != conv.session_id:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="You do not have permission to access this guest conversation",
@@ -47,15 +47,13 @@ async def chat_stream(
             if not doc:
                 raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
             if current_user:
-                if doc.user_id is not None and doc.user_id != current_user.id:
+                if doc.user_id != current_user.id:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail="You do not have access to one or more requested documents",
                     )
             else:
-                is_own_guest_doc = bool(x_session_id and doc.session_id == x_session_id and doc.user_id is None)
-                is_public_doc = bool(doc.user_id is None and doc.session_id is None)
-                if not (is_own_guest_doc or is_public_doc):
+                if not (x_session_id and doc.session_id == x_session_id and doc.user_id is None):
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail="You do not have access to documents from other sessions",

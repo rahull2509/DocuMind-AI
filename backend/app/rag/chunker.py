@@ -41,7 +41,7 @@ def chunk_document(
     tokenizer=None,
 ) -> List[dict]:
     """
-    True token-based, page-aware, and section-aware chunking.
+    True token-based, page-aware, and section-aware chunking without content truncation.
     Accurately verifies tokenizer token counts to guarantee every chunk stays within
     the 512-token limit of the embedding model (e.g., BAAI/bge-small-en-v1.5).
     Preserves tables, lists, sentence boundaries, and section metadata.
@@ -76,12 +76,15 @@ def chunk_document(
         if not text or not text.strip():
             continue
 
-        page_chunks = _sliding_window_tokens(
-            text.strip(),
-            chunk_size_tokens=target_size,
-            chunk_overlap_tokens=target_overlap,
-            tokenizer=tok,
-        )
+        if not bool(re.search(r'[.!?\n\s]', text)) and len(text) > chunk_size:
+            page_chunks = _sliding_window(text, chunk_size, chunk_overlap)
+        else:
+            page_chunks = _sliding_window_tokens(
+                text.strip(),
+                chunk_size_tokens=target_size,
+                chunk_overlap_tokens=target_overlap,
+                tokenizer=tok,
+            )
 
         for chunk_text in page_chunks:
             chunk_section = section_title
@@ -124,79 +127,62 @@ def _sliding_window_tokens(
 ) -> List[str]:
     """
     Split text into overlapping token windows using the actual model tokenizer.
-    Guarantees every chunk has <= chunk_size_tokens and preserves sentence/table boundaries.
+    Guarantees every chunk has <= 500 tokens and preserves sentence/table boundaries without truncation.
     """
     tok = tokenizer if tokenizer is not None else get_tokenizer()
-    total_tokens = count_tokens(text, tok)
-    if total_tokens <= chunk_size_tokens and len(text) <= max(500, chunk_size_tokens * 4):
-        return [text]
 
-    # If text is an unbroken string with no whitespace (e.g. repeated characters, base64 data, minified stream),
-    # tokenizer treats entire long sequences as a single [UNK]. Slice into character chunks.
-    if not bool(re.search(r'\s', text)) and len(text) > max(100, chunk_size_tokens):
-        char_step = max(50, (chunk_size_tokens - chunk_overlap_tokens) * 3)
-        char_window = max(char_step + 10, chunk_size_tokens * 3)
-        unbroken_chunks = []
-        for st in range(0, len(text), char_step):
-            chunk_str = text[st : st + char_window]
-            if chunk_str:
-                unbroken_chunks.append(chunk_str)
-            if st + char_window >= len(text):
-                break
-        return unbroken_chunks
+    # Split into logical units (paragraphs / list items / sentences)
+    raw_paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+    units: List[str] = []
 
-    # Split into logical units: table rows, paragraphs, or sentences
-    # Preserve table rows (^\|.*\|$) and sentence punctuation
-    units = []
-    paragraphs = text.split("\n\n")
-    for p in paragraphs:
-        p_clean = p.strip()
-        if not p_clean:
-            continue
-        # If paragraph looks like a markdown table, split by lines
-        if "|" in p_clean and "\n" in p_clean:
-            table_lines = [ln.strip() for ln in p_clean.splitlines() if ln.strip()]
-            units.extend(table_lines)
+    for para in raw_paragraphs:
+        # If paragraph fits within target token size, keep intact
+        if count_tokens(para, tok) <= chunk_size_tokens:
+            units.append(para)
         else:
             # Split paragraph into sentences
-            sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', p_clean) if s.strip()]
-            if sentences:
-                units.extend(sentences)
-            else:
-                units.append(p_clean)
+            sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", para) if s.strip()]
+            for sent in sentences:
+                if count_tokens(sent, tok) <= chunk_size_tokens:
+                    units.append(sent)
+                else:
+                    # Very long sentence: split by clauses or words
+                    words = sent.split()
+                    step = max(1, chunk_size_tokens - chunk_overlap_tokens)
+                    for start in range(0, len(words), step):
+                        slice_words = words[start : start + chunk_size_tokens]
+                        if slice_words:
+                            units.append(" ".join(slice_words))
+                        if start + chunk_size_tokens >= len(words):
+                            break
 
     if not units:
         units = [text]
 
-    chunks = []
-    current_units = []
+    chunks: List[str] = []
+    current_units: List[str] = []
     current_tokens = 0
 
     for u in units:
         u_tokens = count_tokens(u, tok)
 
-        # If a single sentence/unit exceeds chunk_size_tokens (e.g. 800-token run-on sentence),
-        # slice it directly into valid sub-token windows
+        # Single oversized unit fallback: tile into overlapping windows
         if u_tokens > chunk_size_tokens:
             if current_units:
-                chunks.append(" ".join(current_units))
+                chunks.append("\n\n".join(current_units))
                 current_units = []
                 current_tokens = 0
 
-            # Sub-slice using tokenizer token IDs
             if tok is not None:
                 token_ids = tok.encode(u, add_special_tokens=False)
                 step = max(1, chunk_size_tokens - chunk_overlap_tokens)
-                start = 0
-                while start < len(token_ids):
-                    end = min(start + chunk_size_tokens, len(token_ids))
-                    slice_ids = token_ids[start:end]
-                    sub_text = tok.decode(slice_ids, skip_special_tokens=True).strip()
-                    if sub_text:
-                        chunks.append(sub_text)
-                    if end >= len(token_ids):
+                for start in range(0, len(token_ids), step):
+                    window_ids = token_ids[start : start + chunk_size_tokens]
+                    window_str = tok.decode(window_ids, skip_special_tokens=True).strip()
+                    if window_str:
+                        chunks.append(window_str)
+                    if start + chunk_size_tokens >= len(token_ids):
                         break
-                    start += step
             else:
                 words = u.split()
                 step = max(1, chunk_size_tokens - chunk_overlap_tokens)
@@ -204,10 +190,12 @@ def _sliding_window_tokens(
                     chunk_slice = " ".join(words[start : start + chunk_size_tokens])
                     if chunk_slice:
                         chunks.append(chunk_slice)
+                    if start + chunk_size_tokens >= len(words):
+                        break
             continue
 
         if current_tokens + u_tokens > chunk_size_tokens and current_units:
-            chunk_str = " ".join(current_units)
+            chunk_str = "\n\n".join(current_units)
             chunks.append(chunk_str)
 
             # Roll back units to achieve chunk_overlap_tokens
@@ -228,24 +216,39 @@ def _sliding_window_tokens(
             current_tokens += u_tokens
 
     if current_units:
-        chunk_str = " ".join(current_units)
+        chunk_str = "\n\n".join(current_units)
         if not chunks or chunk_str != chunks[-1]:
             chunks.append(chunk_str)
 
-    # Hard-limit safety guarantee: ensure 100% of chunks are <= 500 tokens
+    # Non-destructive token verification: split any chunk exceeding 500 tokens into
+    # valid sub-chunks with configured overlap so zero content is discarded.
     verified_chunks = []
     for c in chunks:
         c_tok = count_tokens(c, tok)
-        if c_tok <= 510:
+        if c_tok <= 500:
             verified_chunks.append(c)
         else:
-            # Force slice with tokenizer
+            # Token-aware sliding window splitting to preserve 100% of content
             if tok is not None:
-                token_ids = tok.encode(c, add_special_tokens=False)[:500]
-                verified_chunks.append(tok.decode(token_ids, skip_special_tokens=True))
+                token_ids = tok.encode(c, add_special_tokens=False)
+                sub_step = max(1, 400 - chunk_overlap_tokens)
+                for start in range(0, len(token_ids), sub_step):
+                    sub_ids = token_ids[start : start + 400]
+                    sub_text = tok.decode(sub_ids, skip_special_tokens=True).strip()
+                    if sub_text:
+                        verified_chunks.append(sub_text)
+                    if start + 400 >= len(token_ids):
+                        break
             else:
-                words = c.split()[:400]
-                verified_chunks.append(" ".join(words))
+                words = c.split()
+                sub_step = max(1, 350 - chunk_overlap_tokens)
+                for start in range(0, len(words), sub_step):
+                    sub_words = words[start : start + 350]
+                    sub_text = " ".join(sub_words).strip()
+                    if sub_text:
+                        verified_chunks.append(sub_text)
+                    if start + 350 >= len(words):
+                        break
 
     return verified_chunks
 
